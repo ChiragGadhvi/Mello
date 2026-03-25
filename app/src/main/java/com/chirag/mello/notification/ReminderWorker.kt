@@ -47,19 +47,24 @@ class ReminderWorker(context: Context, params: WorkerParameters) : Worker(contex
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            val largeIcon = BitmapFactory.decodeResource(context.resources, R.drawable.icon)
+            val originalIcon = BitmapFactory.decodeResource(context.resources, R.drawable.icon)
             
-            // Optionally scale icon to system preferred dimensions for large icons
+            // Zoom into the center of the icon to make it appear larger inside the system's fixed circle
+            val minEdge = Math.min(originalIcon.width, originalIcon.height)
+            val zoom = 0.85f // crop out edges by 15%
+            val croppedSize = (minEdge * zoom).toInt()
+            val startX = (originalIcon.width - croppedSize) / 2
+            val startY = (originalIcon.height - croppedSize) / 2
+            val croppedIcon = android.graphics.Bitmap.createBitmap(originalIcon, startX, startY, croppedSize, croppedSize)
+
+            // Scale to system preferred dimensions for large icons
             val width = context.resources.getDimensionPixelSize(android.R.dimen.notification_large_icon_width)
             val height = context.resources.getDimensionPixelSize(android.R.dimen.notification_large_icon_height)
-            val scaledLargeIcon = android.graphics.Bitmap.createScaledBitmap(largeIcon, width, height, true)
+            val largeIcon = android.graphics.Bitmap.createScaledBitmap(croppedIcon, width, height, true)
 
             val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
-                .setLargeIcon(scaledLargeIcon)
-                .setStyle(NotificationCompat.BigPictureStyle()
-                    .bigPicture(largeIcon)
-                    .bigLargeIcon(null as android.graphics.Bitmap?))
+                .setLargeIcon(largeIcon)
                 .setContentTitle("Hey, Mello here 🌙")
                 .setContentText("Capture your day in one line 🌙")
                 .setAutoCancel(true)
