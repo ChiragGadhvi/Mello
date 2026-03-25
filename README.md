@@ -11,6 +11,26 @@
 
 ---
 
+<div align="center">
+  <table>
+    <tr>
+      <td>
+        <img src="https://github.com/user-attachments/assets/380ecd54-8f4a-43fa-9d67-d80828aaf207" width="180" alt="frame1"/>
+      </td>
+      <td>
+        <img src="https://github.com/user-attachments/assets/54cf057f-c73f-4369-bb11-a925c47e627c" width="180" alt="frame2"/>
+      </td>
+      <td>
+        <img src="https://github.com/user-attachments/assets/95baa278-dad5-42e2-917b-ea04c23ef8e4" width="180" alt="frame3"/>
+      </td>
+      <td>
+        <img src="https://github.com/user-attachments/assets/eb77f5c6-bc16-4125-b6dd-eb3726a1ba5c" width="180" alt="frame4"/>
+      </td>
+    </tr>
+  </table>
+</div>
+
+
 ## ✨ Features
 
 - **Micro-Journaling**: Capture your day in exactly one sentence. (Max 150 characters).
