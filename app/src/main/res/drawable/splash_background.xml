@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Base dark background -->
+    <item>
+        <color android:color="#090234"/>
+    </item>
+    <!-- Splash image with reduced opacity over dark background -->
+    <item>
+        <bitmap
+            android:src="@drawable/bg_img"
+            android:gravity="fill"
+            android:alpha="0.55"/>
+    </item>
+</layer-list>
