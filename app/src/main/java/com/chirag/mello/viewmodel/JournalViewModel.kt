@@ -23,10 +23,10 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    fun saveEntry(text: String, moodEmoji: String) {
+    fun saveEntry(text: String, mood: String) {
         if (text.isBlank()) return
         viewModelScope.launch {
-            dao.insertEntry(JournalEntry(text = text.trim(), moodEmoji = moodEmoji))
+            dao.insertEntry(JournalEntry(text = text.trim(), mood = mood))
         }
     }
 

@@ -1,0 +1,43 @@
+
+> Configure project :app
+WARNING: The option setting 'android.builtInKotlin=false' is deprecated.
+The current default is 'true'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+WARNING: The option setting 'android.newDsl=false' is deprecated.
+The current default is 'true'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :app:processDebugNavigationResources UP-TO-DATE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :app:generateDebugRFile UP-TO-DATE
+> Task :app:kaptGenerateStubsDebugKotlin UP-TO-DATE
+> Task :app:kaptDebugKotlin UP-TO-DATE
+
+e: file:///E:/Mello/app/src/main/java/com/chirag/mello/ui/screens/HomeScreen.kt:232:36 Unresolved reference 'launch'.
+> Task :app:compileDebugKotlin FAILED
+e: file:///E:/Mello/app/src/main/java/com/chirag/mello/ui/screens/HomeScreen.kt:233:36 Suspend function 'suspend fun animateScrollToPage(page: Int, pageOffsetFraction: Float = ..., animationSpec: AnimationSpec<Float> = ...): Unit' can only be called from a coroutine or another suspend function.
+e: file:///E:/Mello/app/src/main/java/com/chirag/mello/ui/screens/HomeScreen.kt:261:40 Unresolved reference 'launch'.
+e: file:///E:/Mello/app/src/main/java/com/chirag/mello/ui/screens/HomeScreen.kt:262:40 Suspend function 'suspend fun animateScrollToPage(page: Int, pageOffsetFraction: Float = ..., animationSpec: AnimationSpec<Float> = ...): Unit' can only be called from a coroutine or another suspend function.
+e: file:///E:/Mello/app/src/main/java/com/chirag/mello/ui/screens/HomeScreen.kt:297:36 Unresolved reference 'launch'.
+e: file:///E:/Mello/app/src/main/java/com/chirag/mello/ui/screens/HomeScreen.kt:298:36 Suspend function 'suspend fun animateScrollToPage(page: Int, pageOffsetFraction: Float = ..., animationSpec: AnimationSpec<Float> = ...): Unit' can only be called from a coroutine or another suspend function.
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileDebugKotlin'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+   > Compilation error. See log for more details
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 12s
+8 actionable tasks: 1 executed, 7 up-to-date

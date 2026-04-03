@@ -7,6 +7,6 @@ import androidx.room.PrimaryKey
 data class JournalEntry(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val text: String,
-    val moodEmoji: String,
+    val mood: String,
     val timestamp: Long = System.currentTimeMillis()
 )

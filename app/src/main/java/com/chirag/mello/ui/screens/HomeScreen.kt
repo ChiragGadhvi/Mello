@@ -11,6 +11,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
@@ -29,13 +31,13 @@ import androidx.compose.ui.unit.*
 import com.chirag.mello.R
 import com.chirag.mello.ui.theme.*
 import com.chirag.mello.viewmodel.JournalViewModel
+import kotlinx.coroutines.launch
 
-val MOODS = listOf("😊", "😄", "😌", "😔", "😩", "😤", "🥰", "🤔", "😴", "🥳")
-
+import com.chirag.mello.data.ALL_MOODS
 @Composable
 fun HomeScreen(viewModel: JournalViewModel, onNavigateToTimeline: () -> Unit) {
     var text by remember { mutableStateOf("") }
-    var selectedMood by remember { mutableStateOf(MOODS[0]) }
+    var selectedMood by remember { mutableStateOf(ALL_MOODS[0].key) }
     var isFocused by remember { mutableStateOf(false) }
     var showSuccess by remember { mutableStateOf(false) }
 
@@ -208,34 +210,100 @@ fun HomeScreen(viewModel: JournalViewModel, onNavigateToTimeline: () -> Unit) {
 
 @Composable
 private fun MoodSelector(selectedMood: String, onMoodSelected: (String) -> Unit) {
-    LazyRow(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(horizontal = 8.dp)
+    val initialPage = ALL_MOODS.indexOfFirst { it.key == selectedMood }.takeIf { it >= 0 } ?: 0
+    val pagerState = androidx.compose.foundation.pager.rememberPagerState(
+        initialPage = initialPage,
+        pageCount = { ALL_MOODS.size }
+    )
+
+    LaunchedEffect(pagerState.currentPage) {
+        onMoodSelected(ALL_MOODS[pagerState.currentPage].key)
+    }
+
+    val coroutineScope = rememberCoroutineScope()
+
+    Row(
+        modifier = Modifier.fillMaxWidth().height(180.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        itemsIndexed(MOODS) { idx, emoji ->
-            val isSelected = selectedMood == emoji
+        IconButton(
+            onClick = {
+                if (pagerState.currentPage > 0) {
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                    }
+                }
+            },
+            modifier = Modifier.alpha(if (pagerState.currentPage > 0) 1f else 0.3f)
+        ) {
+            Icon(Icons.Default.KeyboardArrowLeft, contentDescription = "Previous", tint = TextPrimary)
+        }
+
+        androidx.compose.foundation.pager.HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 72.dp),
+            pageSpacing = (-16).dp
+        ) { page ->
+            val mood = ALL_MOODS[page]
+            val isSelected = pagerState.currentPage == page
+            
             val scale by animateFloatAsState(
-                targetValue = if (isSelected) 1.25f else 1f,
+                targetValue = if (isSelected) 1.25f else 0.85f,
                 animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-                label = "moodScale$idx"
-            )
-            val backgroundColor by animateColorAsState(
-                targetValue = if (isSelected) SurfaceVariant else Color.Transparent,
-                label = "moodBg"
+                label = "moodScale$page"
             )
             
-            Box(
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
-                    .size(52.dp)
                     .scale(scale)
-                    .clip(CircleShape)
-                    .background(backgroundColor)
-                    .clickable { onMoodSelected(emoji) },
-                contentAlignment = Alignment.Center
+                    .clickable {
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(page)
+                        }
+                    }
             ) {
-                Text(text = emoji, fontSize = 26.sp)
+                Box(
+                    modifier = Modifier
+                        .size(100.dp)
+                        .clip(CircleShape)
+                        .background(if (isSelected) SurfaceVariant else Color.Transparent)
+                        .border(
+                            width = 2.dp,
+                            color = Lavender.copy(alpha = if (isSelected) 1f else 0f),
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painter = painterResource(mood.drawableRes),
+                        contentDescription = mood.label,
+                        modifier = Modifier.fillMaxSize().padding(if (isSelected) 8.dp else 4.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = mood.label,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (isSelected) Lavender else TextSecondary,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                )
             }
+        }
+
+        IconButton(
+            onClick = {
+                if (pagerState.currentPage < ALL_MOODS.size - 1) {
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                    }
+                }
+            },
+            modifier = Modifier.alpha(if (pagerState.currentPage < ALL_MOODS.size - 1) 1f else 0.3f)
+        ) {
+            Icon(Icons.Default.KeyboardArrowRight, contentDescription = "Next", tint = TextPrimary)
         }
     }
 }

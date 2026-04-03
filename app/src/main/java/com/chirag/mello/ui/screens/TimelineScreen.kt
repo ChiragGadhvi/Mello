@@ -1,5 +1,6 @@
 package com.chirag.mello.ui.screens
 
+import androidx.compose.ui.res.painterResource
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -20,6 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
+import com.chirag.mello.data.ALL_MOODS
 import com.chirag.mello.data.JournalEntry
 import com.chirag.mello.ui.theme.*
 import com.chirag.mello.viewmodel.JournalViewModel
@@ -146,19 +148,31 @@ private fun EntryCard(entry: JournalEntry, onUpdate: (JournalEntry) -> Unit, onD
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Top
             ) {
-                // Circular Mood Bubble with Gradient
+                // Mood Image or Bubble
+                val mood = ALL_MOODS.find { it.key == entry.mood }
                 Box(
                     modifier = Modifier
                         .size(48.dp)
                         .clip(CircleShape)
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(Lavender.copy(alpha=0.15f), Mint.copy(alpha=0.15f))
+                        .then(
+                            if (mood != null) Modifier.background(androidx.compose.ui.graphics.Color.Transparent)
+                            else Modifier.background(
+                                Brush.linearGradient(
+                                    colors = listOf(Lavender.copy(alpha=0.15f), Mint.copy(alpha=0.15f))
+                                )
                             )
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(text = entry.moodEmoji, fontSize = 24.sp)
+                    if (mood != null) {
+                        Image(
+                            painter = painterResource(mood.drawableRes),
+                            contentDescription = mood.label,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Text(text = entry.mood, fontSize = 24.sp)
+                    }
                 }
                 
                 Spacer(modifier = Modifier.width(16.dp))
