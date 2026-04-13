@@ -28,8 +28,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.*
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import com.chirag.mello.R
 import com.chirag.mello.ui.theme.*
+import com.chirag.mello.ui.util.rememberSpeechRecognizer
 import com.chirag.mello.viewmodel.JournalViewModel
 import kotlinx.coroutines.launch
 
@@ -42,6 +51,24 @@ fun HomeScreen(viewModel: JournalViewModel, onNavigateToTimeline: () -> Unit) {
     var showSuccess by remember { mutableStateOf(false) }
 
     val streak by viewModel.streak.collectAsState()
+
+    val context = LocalContext.current
+    var hasAudioPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
+                == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> hasAudioPermission = granted }
+    val speech = rememberSpeechRecognizer(
+        context = context,
+        onResult = { result ->
+            val appended = if (text.isBlank()) result else "$text $result"
+            text = appended.take(150)
+        }
+    )
 
     val inputScale by animateFloatAsState(
         targetValue = if (isFocused) 1.01f else 1f,
@@ -141,13 +168,53 @@ fun HomeScreen(viewModel: JournalViewModel, onNavigateToTimeline: () -> Unit) {
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
                     )
 
-                    // Char counter
+                    // Mic + char counter
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(end = 12.dp, bottom = 8.dp),
-                        horizontalArrangement = Arrangement.End
+                            .padding(start = 4.dp, end = 12.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        IconButton(
+                            onClick = {
+                                if (!hasAudioPermission) {
+                                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                } else if (speech.isListening) {
+                                    speech.stopListening()
+                                } else {
+                                    speech.startListening()
+                                }
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (speech.isListening) Icons.Default.MicOff else Icons.Default.Mic,
+                                contentDescription = if (speech.isListening) "Stop listening" else "Speak",
+                                tint = if (speech.isListening) Lavender else TextSecondary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        if (speech.isListening) {
+                            val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+                            val pulseAlpha by infiniteTransition.animateFloat(
+                                initialValue = 0.2f, targetValue = 0.8f,
+                                animationSpec = infiniteRepeatable(tween(600), RepeatMode.Reverse),
+                                label = "pulseAlpha"
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .background(Lavender.copy(alpha = pulseAlpha), CircleShape)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = "Listening…",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Lavender
+                            )
+                        }
+                        Spacer(modifier = Modifier.weight(1f))
                         Text(
                             text = "${text.length}/150",
                             style = MaterialTheme.typography.labelMedium,
