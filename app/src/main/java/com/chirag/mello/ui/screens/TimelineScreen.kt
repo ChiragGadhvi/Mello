@@ -1,57 +1,156 @@
 package com.chirag.mello.ui.screens
 
-import androidx.compose.ui.res.painterResource
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
-import android.Manifest
-import android.content.pm.PackageManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import com.chirag.mello.data.ALL_MOODS
 import com.chirag.mello.data.JournalEntry
 import com.chirag.mello.ui.theme.*
 import com.chirag.mello.ui.util.rememberSpeechRecognizer
 import com.chirag.mello.viewmodel.JournalViewModel
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlinx.coroutines.launch
+
+// ── Data model ────────────────────────────────────────────────────────────────
+
+private data class CalendarDay(
+    val dayOfMonth: Int,
+    val midnightMillis: Long,
+    val isCurrentMonth: Boolean,
+    val isToday: Boolean,
+    val entries: List<JournalEntry>
+)
+
+private fun buildCalendarDays(
+    year: Int,
+    month: Int,
+    entriesByDay: Map<Long, List<JournalEntry>>
+): List<CalendarDay> {
+    val today = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0);      set(Calendar.MILLISECOND, 0)
+    }
+    val todayMillis = today.timeInMillis
+
+    fun midnightOf(cal: Calendar): Long {
+        return Calendar.getInstance().apply {
+            set(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH),
+                0, 0, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+
+    val firstOfMonth = Calendar.getInstance().apply {
+        set(year, month, 1, 0, 0, 0); set(Calendar.MILLISECOND, 0)
+    }
+    val daysInMonth = firstOfMonth.getActualMaximum(Calendar.DAY_OF_MONTH)
+    // Sunday=1 … Saturday=7; we want Sunday as column 0
+    val startOffset = firstOfMonth.get(Calendar.DAY_OF_WEEK) - 1
+
+    val days = mutableListOf<CalendarDay>()
+
+    // Leading days from previous month
+    if (startOffset > 0) {
+        val prevCal = (firstOfMonth.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, -startOffset) }
+        repeat(startOffset) {
+            val millis = midnightOf(prevCal)
+            days.add(CalendarDay(prevCal.get(Calendar.DAY_OF_MONTH), millis, false, millis == todayMillis, emptyList()))
+            prevCal.add(Calendar.DAY_OF_MONTH, 1)
+        }
+    }
+
+    // Current month days
+    val cur = (firstOfMonth.clone() as Calendar)
+    repeat(daysInMonth) {
+        val millis = midnightOf(cur)
+        days.add(CalendarDay(cur.get(Calendar.DAY_OF_MONTH), millis, true, millis == todayMillis,
+            entriesByDay[millis] ?: emptyList()))
+        cur.add(Calendar.DAY_OF_MONTH, 1)
+    }
+
+    // Trailing days to fill final row
+    val remainder = days.size % 7
+    if (remainder != 0) {
+        val trail = cur.clone() as Calendar
+        repeat(7 - remainder) {
+            val millis = midnightOf(trail)
+            days.add(CalendarDay(trail.get(Calendar.DAY_OF_MONTH), millis, false, millis == todayMillis, emptyList()))
+            trail.add(Calendar.DAY_OF_MONTH, 1)
+        }
+    }
+
+    return days
+}
+
+// ── Screen ────────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TimelineScreen(viewModel: JournalViewModel, onBack: () -> Unit) {
-    val entries by viewModel.entries.collectAsState()
+    val entries      by viewModel.entries.collectAsState()
+    val entriesByDay by viewModel.entriesByDay.collectAsState()
 
-    var selectedEntry     by remember { mutableStateOf<JournalEntry?>(null) }
-    var showBottomSheet   by remember { mutableStateOf(false) }
-    var showEditDialog    by remember { mutableStateOf(false) }
-    var showDeleteConfirm by remember { mutableStateOf(false) }
-    var editText          by remember { mutableStateOf("") }
-    val sheetState        = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val coroutineScope    = rememberCoroutineScope()
+    // Month the calendar is showing (starts at current month)
+    var displayedMonth by remember { mutableStateOf(Calendar.getInstance()) }
+    val currentMonth   = remember { Calendar.getInstance() }
+
+    // Sheet / dialog state
+    var selectedDayEntries by remember { mutableStateOf<List<JournalEntry>>(emptyList()) }
+    var selectedDayLabel   by remember { mutableStateOf("") }
+    var selectedEntry      by remember { mutableStateOf<JournalEntry?>(null) }
+    var showDaySheet       by remember { mutableStateOf(false) }
+    var showEntrySheet     by remember { mutableStateOf(false) }
+    var showEditDialog     by remember { mutableStateOf(false) }
+    var showDeleteConfirm  by remember { mutableStateOf(false) }
+    var editText           by remember { mutableStateOf("") }
+
+    val daySheetState   = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val entrySheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val coroutineScope  = rememberCoroutineScope()
+
+    // Build calendar grid
+    val calendarDays = remember(displayedMonth, entriesByDay) {
+        buildCalendarDays(
+            displayedMonth.get(Calendar.YEAR),
+            displayedMonth.get(Calendar.MONTH),
+            entriesByDay
+        )
+    }
+
+    val isCurrentMonth = remember(displayedMonth) {
+        displayedMonth.get(Calendar.YEAR) == currentMonth.get(Calendar.YEAR) &&
+        displayedMonth.get(Calendar.MONTH) == currentMonth.get(Calendar.MONTH)
+    }
 
     Scaffold(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -73,48 +172,98 @@ fun TimelineScreen(viewModel: JournalViewModel, onBack: () -> Unit) {
         if (entries.isEmpty()) {
             EmptyState(modifier = Modifier.padding(padding))
         } else {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 110.dp),
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(top = 16.dp, bottom = 40.dp)
+                    .padding(horizontal = 16.dp)
             ) {
-                itemsIndexed(entries, key = { _, e -> e.id }) { index, entry ->
-                    AnimatedMoodGridCard(
-                        entry = entry,
-                        index = index,
-                        onClick = {
-                            selectedEntry = entry
-                            editText = entry.text
-                            showBottomSheet = true
+                Spacer(Modifier.height(8.dp))
+
+                // Month navigation
+                MonthNavigationHeader(
+                    displayedMonth = displayedMonth,
+                    isCurrentMonth = isCurrentMonth,
+                    onPrev = {
+                        displayedMonth = (displayedMonth.clone() as Calendar)
+                            .apply { add(Calendar.MONTH, -1) }
+                    },
+                    onNext = {
+                        displayedMonth = (displayedMonth.clone() as Calendar)
+                            .apply { add(Calendar.MONTH, 1) }
+                    }
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                // Day-of-week header
+                WeekDayLabels()
+
+                Spacer(Modifier.height(8.dp))
+
+                // Calendar grid
+                CalendarGrid(
+                    days = calendarDays,
+                    onDayClick = { day ->
+                        if (day.entries.isNotEmpty()) {
+                            selectedDayEntries = day.entries.sortedBy { it.timestamp }
+                            selectedDayLabel = SimpleDateFormat("EEEE, MMMM d", Locale.getDefault())
+                                .format(Date(day.midnightMillis))
+                            showDaySheet = true
                         }
-                    )
-                }
+                    }
+                )
             }
         }
     }
 
-    // Bottom sheet — entry detail
-    if (showBottomSheet) {
+    // ── Day entries sheet ─────────────────────────────────────────────────────
+    if (showDaySheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showDaySheet = false },
+            sheetState = daySheetState,
+            containerColor = Surface,
+            tonalElevation = 0.dp,
+            dragHandle = {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 16.dp, bottom = 8.dp)
+                        .width(40.dp).height(4.dp)
+                        .background(SurfaceVariant, RoundedCornerShape(2.dp))
+                )
+            }
+        ) {
+            DayEntriesSheetContent(
+                entries = selectedDayEntries,
+                dayLabel = selectedDayLabel,
+                onEntryClick = { entry ->
+                    coroutineScope.launch { daySheetState.hide() }.invokeOnCompletion {
+                        showDaySheet = false
+                        selectedEntry = entry
+                        editText = entry.text
+                        showEntrySheet = true
+                    }
+                }
+            )
+        }
+    }
+
+    // ── Entry detail sheet ────────────────────────────────────────────────────
+    if (showEntrySheet) {
         selectedEntry?.let { entry ->
             ModalBottomSheet(
                 onDismissRequest = {
-                    showBottomSheet = false
+                    showEntrySheet = false
                     showDeleteConfirm = false
                 },
-                sheetState = sheetState,
+                sheetState = entrySheetState,
                 containerColor = Surface,
                 tonalElevation = 0.dp,
                 dragHandle = {
                     Box(
                         modifier = Modifier
                             .padding(top = 16.dp, bottom = 8.dp)
-                            .width(40.dp)
-                            .height(4.dp)
+                            .width(40.dp).height(4.dp)
                             .background(SurfaceVariant, RoundedCornerShape(2.dp))
                     )
                 }
@@ -125,8 +274,8 @@ fun TimelineScreen(viewModel: JournalViewModel, onBack: () -> Unit) {
                     onEditClick = { showEditDialog = true },
                     onDeleteClick = { showDeleteConfirm = true },
                     onDeleteConfirm = {
-                        coroutineScope.launch { sheetState.hide() }.invokeOnCompletion {
-                            showBottomSheet = false
+                        coroutineScope.launch { entrySheetState.hide() }.invokeOnCompletion {
+                            showEntrySheet = false
                             showDeleteConfirm = false
                             viewModel.deleteEntry(entry)
                             selectedEntry = null
@@ -138,7 +287,7 @@ fun TimelineScreen(viewModel: JournalViewModel, onBack: () -> Unit) {
         }
     }
 
-    // Edit dialog
+    // ── Edit dialog ───────────────────────────────────────────────────────────
     if (showEditDialog) {
         selectedEntry?.let { entry ->
             val context = LocalContext.current
@@ -162,11 +311,7 @@ fun TimelineScreen(viewModel: JournalViewModel, onBack: () -> Unit) {
             AlertDialog(
                 onDismissRequest = { showEditDialog = false },
                 title = {
-                    Text(
-                        "Edit Journal Entry",
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
-                    )
+                    Text("Edit Journal Entry", fontWeight = FontWeight.Bold, color = TextPrimary)
                 },
                 text = {
                     OutlinedTextField(
@@ -213,26 +358,19 @@ fun TimelineScreen(viewModel: JournalViewModel, onBack: () -> Unit) {
                         onClick = {
                             viewModel.updateEntry(entry.copy(text = editText))
                             showEditDialog = false
-                            coroutineScope.launch { sheetState.hide() }.invokeOnCompletion {
-                                showBottomSheet = false
+                            coroutineScope.launch { entrySheetState.hide() }.invokeOnCompletion {
+                                showEntrySheet = false
                                 selectedEntry = null
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Lavender,
-                            contentColor = Background
-                        )
-                    ) {
-                        Text("Save Changes")
-                    }
+                        colors = ButtonDefaults.buttonColors(containerColor = Lavender, contentColor = Background)
+                    ) { Text("Save Changes") }
                 },
                 dismissButton = {
                     TextButton(
                         onClick = { showEditDialog = false },
                         colors = ButtonDefaults.textButtonColors(contentColor = TextSecondary)
-                    ) {
-                        Text("Cancel")
-                    }
+                    ) { Text("Cancel") }
                 },
                 containerColor = Surface
             )
@@ -240,63 +378,271 @@ fun TimelineScreen(viewModel: JournalViewModel, onBack: () -> Unit) {
     }
 }
 
+// ── Calendar composables ──────────────────────────────────────────────────────
+
 @Composable
-private fun AnimatedMoodGridCard(entry: JournalEntry, index: Int, onClick: () -> Unit) {
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(minOf(index, 10) * 50L)
-        visible = true
+private fun MonthNavigationHeader(
+    displayedMonth: Calendar,
+    isCurrentMonth: Boolean,
+    onPrev: () -> Unit,
+    onNext: () -> Unit
+) {
+    val label = remember(displayedMonth) {
+        SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(displayedMonth.time)
     }
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(tween(400)) + slideInVertically(
-            animationSpec = tween(400, easing = LinearOutSlowInEasing),
-            initialOffsetY = { it / 4 }
-        )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        MoodGridCard(entry = entry, onClick = onClick)
+        IconButton(onClick = onPrev) {
+            Icon(Icons.Filled.ChevronLeft, contentDescription = "Previous month", tint = Lavender)
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            color = TextPrimary
+        )
+        IconButton(onClick = onNext, enabled = !isCurrentMonth) {
+            Icon(
+                Icons.Filled.ChevronRight,
+                contentDescription = "Next month",
+                tint = if (isCurrentMonth) TextSecondary.copy(alpha = 0.3f) else Lavender
+            )
+        }
     }
 }
 
 @Composable
-private fun MoodGridCard(entry: JournalEntry, onClick: () -> Unit) {
-    val mood = remember(entry.mood) { ALL_MOODS.find { it.key == entry.mood } }
-    val shortDate = remember(entry.timestamp) {
-        SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(entry.timestamp))
-    }
-    Card(
-        modifier = Modifier
-            .aspectRatio(1f)
-            .clickable { onClick() },
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Surface),
-        border = BorderStroke(1.dp, SurfaceVariant.copy(alpha = 0.5f)),
-        elevation = CardDefaults.cardElevation(0.dp)
-    ) {
-        Box(modifier = Modifier.fillMaxSize().padding(6.dp), contentAlignment = Alignment.Center) {
-            if (mood != null) {
-                Image(
-                    painter = painterResource(mood.drawableRes),
-                    contentDescription = mood.label,
-                    modifier = Modifier
-                        .fillMaxSize(0.75f)
-                        .padding(bottom = 14.dp)
-                        .clip(RoundedCornerShape(12.dp)),
-                    contentScale = ContentScale.Fit
-                )
-            }
+private fun WeekDayLabels() {
+    val labels = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+    Row(modifier = Modifier.fillMaxWidth()) {
+        labels.forEach { label ->
             Text(
-                text = shortDate,
-                style = MaterialTheme.typography.labelSmall,
+                text = label,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                 color = TextSecondary,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 4.dp),
                 textAlign = TextAlign.Center
             )
         }
     }
 }
+
+@Composable
+private fun CalendarGrid(days: List<CalendarDay>, onDayClick: (CalendarDay) -> Unit) {
+    val weeks = days.chunked(7)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        weeks.forEach { week ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                week.forEach { day ->
+                    DayCell(
+                        day = day,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onDayClick(day) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DayCell(day: CalendarDay, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val dominantMood = remember(day.entries) {
+        if (day.entries.isEmpty()) null
+        else ALL_MOODS.find {
+            it.key == day.entries.groupBy { e -> e.mood }.maxByOrNull { (_, v) -> v.size }?.key
+        }
+    }
+
+    val bgColor = when {
+        !day.isCurrentMonth          -> androidx.compose.ui.graphics.Color.Transparent
+        dominantMood != null         -> dominantMood.color.copy(alpha = 0.18f)
+        else                         -> Surface.copy(alpha = 0.6f)
+    }
+    val numberColor = when {
+        !day.isCurrentMonth -> TextSecondary.copy(alpha = 0.25f)
+        day.isToday         -> Lavender
+        else                -> TextPrimary
+    }
+
+    Box(
+        modifier = modifier
+            .aspectRatio(0.72f)
+            .background(bgColor, RoundedCornerShape(12.dp))
+            .then(
+                if (day.isToday)
+                    Modifier.border(1.5.dp, Lavender, RoundedCornerShape(12.dp))
+                else Modifier
+            )
+            .then(
+                if (day.isCurrentMonth && day.entries.isNotEmpty())
+                    Modifier.clickable { onClick() }
+                else Modifier
+            )
+    ) {
+        // Day number — top start
+        Text(
+            text = "${day.dayOfMonth}",
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(4.dp),
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+            color = numberColor,
+            fontWeight = if (day.isToday) FontWeight.Bold else FontWeight.Normal
+        )
+
+        // Mood image — centered
+        if (dominantMood != null && day.isCurrentMonth) {
+            Image(
+                painter = painterResource(dominantMood.drawableRes),
+                contentDescription = dominantMood.label,
+                modifier = Modifier
+                    .fillMaxSize(0.72f)
+                    .align(Alignment.Center),
+                contentScale = ContentScale.Fit
+            )
+        }
+    }
+}
+
+// ── Day entries bottom sheet ──────────────────────────────────────────────────
+
+@Composable
+private fun DayEntriesSheetContent(
+    entries: List<JournalEntry>,
+    dayLabel: String,
+    onEntryClick: (JournalEntry) -> Unit
+) {
+    val dominantMood = remember(entries) {
+        if (entries.isEmpty()) null
+        else ALL_MOODS.find {
+            it.key == entries.groupBy { e -> e.mood }.maxByOrNull { (_, v) -> v.size }?.key
+        }
+    }
+    val entryWord = if (entries.size == 1) "entry" else "entries"
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+    ) {
+        // Header
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            if (dominantMood != null) {
+                Image(
+                    painter = painterResource(dominantMood.drawableRes),
+                    contentDescription = dominantMood.label,
+                    modifier = Modifier.size(48.dp),
+                    contentScale = ContentScale.Fit
+                )
+            }
+            Column {
+                Text(
+                    text = dayLabel,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = TextPrimary
+                )
+                Text(
+                    text = "${entries.size} $entryWord",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextSecondary
+                )
+            }
+        }
+
+        HorizontalDivider(
+            modifier = Modifier.padding(horizontal = 24.dp),
+            color = SurfaceVariant,
+            thickness = 0.5.dp
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        LazyColumn(
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(entries, key = { it.id }) { entry ->
+                EntryListRow(entry = entry, onClick = { onEntryClick(entry) })
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun EntryListRow(entry: JournalEntry, onClick: () -> Unit) {
+    val mood = remember(entry.mood) { ALL_MOODS.find { it.key == entry.mood } }
+    val timeStr = remember(entry.timestamp) {
+        SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(entry.timestamp))
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = SurfaceVariant),
+        elevation = CardDefaults.cardElevation(0.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Time
+            Text(
+                text = timeStr,
+                modifier = Modifier.width(52.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = TextSecondary,
+                textAlign = TextAlign.Center
+            )
+
+            // Mood image
+            if (mood != null) {
+                Image(
+                    painter = painterResource(mood.drawableRes),
+                    contentDescription = mood.label,
+                    modifier = Modifier.size(40.dp),
+                    contentScale = ContentScale.Fit
+                )
+            }
+
+            // Text preview
+            Column(modifier = Modifier.weight(1f)) {
+                if (mood != null) {
+                    Text(
+                        text = mood.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Lavender
+                    )
+                }
+                Text(
+                    text = entry.text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+// ── Entry detail sheet content (preserved from original) ─────────────────────
 
 @Composable
 private fun EntryDetailSheetContent(
@@ -322,7 +668,6 @@ private fun EntryDetailSheetContent(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        // Mood image + label
         if (mood != null) {
             Image(
                 painter = painterResource(mood.drawableRes),
@@ -339,7 +684,6 @@ private fun EntryDetailSheetContent(
 
         HorizontalDivider(color = SurfaceVariant, thickness = 0.5.dp)
 
-        // Journal text
         Text(
             text = entry.text,
             style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 26.sp),
@@ -347,27 +691,17 @@ private fun EntryDetailSheetContent(
             modifier = Modifier.fillMaxWidth()
         )
 
-        // Date row
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.Info,
-                contentDescription = null,
-                modifier = Modifier.size(14.dp),
-                tint = TextSecondary
-            )
-            Text(
-                text = dateStr,
-                style = MaterialTheme.typography.labelMedium,
-                color = TextSecondary
-            )
+            Icon(Icons.Default.Info, contentDescription = null,
+                modifier = Modifier.size(14.dp), tint = TextSecondary)
+            Text(text = dateStr, style = MaterialTheme.typography.labelMedium, color = TextSecondary)
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(Modifier.height(4.dp))
 
-        // Edit + Delete buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -375,63 +709,39 @@ private fun EntryDetailSheetContent(
             // Edit button
             Box(
                 modifier = Modifier
-                    .weight(1f)
-                    .height(50.dp)
+                    .weight(1f).height(50.dp)
                     .background(
-                        brush = Brush.horizontalGradient(listOf(Mint, Lavender)),
-                        shape = RoundedCornerShape(20.dp)
+                        Brush.horizontalGradient(listOf(Mint, Lavender)),
+                        RoundedCornerShape(20.dp)
                     )
                     .clickable { onEditClick() },
                 contentAlignment = Alignment.Center
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "Edit",
-                        tint = Background,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        "Edit",
-                        color = Background,
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.Edit, "Edit", tint = Background, modifier = Modifier.size(18.dp))
+                    Text("Edit", color = Background,
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
                 }
             }
 
             // Delete button
             Box(
                 modifier = Modifier
-                    .weight(1f)
-                    .height(50.dp)
+                    .weight(1f).height(50.dp)
                     .background(
-                        brush = Brush.horizontalGradient(
-                            listOf(Peach.copy(alpha = 0.3f), Peach.copy(alpha = 0.15f))
-                        ),
-                        shape = RoundedCornerShape(20.dp)
+                        Brush.horizontalGradient(listOf(Peach.copy(alpha = 0.3f), Peach.copy(alpha = 0.15f))),
+                        RoundedCornerShape(20.dp)
                     )
                     .border(1.dp, Peach.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
                     .clickable { onDeleteClick() },
                 contentAlignment = Alignment.Center
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Delete",
-                        tint = Peach,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        "Delete",
-                        color = Peach,
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.Delete, "Delete", tint = Peach, modifier = Modifier.size(18.dp))
+                    Text("Delete", color = Peach,
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
                 }
             }
         }
@@ -444,39 +754,22 @@ private fun EntryDetailSheetContent(
                 colors = CardDefaults.cardColors(containerColor = SurfaceVariant),
                 border = BorderStroke(1.dp, Peach.copy(alpha = 0.4f))
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        "Delete this entry?",
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Delete this entry?",
                         style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                        color = TextPrimary
-                    )
-                    Text(
-                        "This cannot be undone.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        color = TextPrimary)
+                    Text("This cannot be undone.",
+                        style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                    Row(modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TextButton(
-                            onClick = onDeleteDismiss,
-                            colors = ButtonDefaults.textButtonColors(contentColor = TextSecondary)
-                        ) {
+                        verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = onDeleteDismiss,
+                            colors = ButtonDefaults.textButtonColors(contentColor = TextSecondary)) {
                             Text("Cancel")
                         }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = onDeleteConfirm,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Peach,
-                                contentColor = Background
-                            )
-                        ) {
+                        Spacer(Modifier.width(8.dp))
+                        Button(onClick = onDeleteConfirm,
+                            colors = ButtonDefaults.buttonColors(containerColor = Peach, contentColor = Background)) {
                             Text("Delete", fontWeight = FontWeight.Bold)
                         }
                     }
@@ -486,6 +779,8 @@ private fun EntryDetailSheetContent(
     }
 }
 
+// ── Empty state ───────────────────────────────────────────────────────────────
+
 @Composable
 private fun EmptyState(modifier: Modifier = Modifier) {
     Column(
@@ -494,25 +789,16 @@ private fun EmptyState(modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
-            modifier = Modifier
-                .size(100.dp)
-                .clip(CircleShape)
+            modifier = Modifier.size(100.dp).clip(CircleShape)
                 .background(SurfaceVariant.copy(alpha = 0.5f)),
             contentAlignment = Alignment.Center
-        ) {
-            Text("🌙", fontSize = 48.sp)
-        }
+        ) { Text("🌙", fontSize = 48.sp) }
         Spacer(Modifier.height(24.dp))
-        Text(
-            text = "Your journal is empty",
+        Text("Your journal is empty",
             style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-            color = TextPrimary
-        )
+            color = TextPrimary)
         Spacer(Modifier.height(8.dp))
-        Text(
-            text = "Write your first entry to see it here.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = TextSecondary
-        )
+        Text("Write your first entry to see it here.",
+            style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
     }
 }

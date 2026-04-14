@@ -44,7 +44,7 @@ import kotlinx.coroutines.launch
 
 import com.chirag.mello.data.ALL_MOODS
 @Composable
-fun HomeScreen(viewModel: JournalViewModel, onNavigateToTimeline: () -> Unit) {
+fun HomeScreen(viewModel: JournalViewModel, onNavigateToTimeline: () -> Unit, onNavigateToInsights: () -> Unit = {}) {
     var text by remember { mutableStateOf("") }
     var selectedMood by remember { mutableStateOf(ALL_MOODS[0].key) }
     var isFocused by remember { mutableStateOf(false) }
@@ -111,7 +111,7 @@ fun HomeScreen(viewModel: JournalViewModel, onNavigateToTimeline: () -> Unit) {
                         color = TextPrimary
                     )
                 }
-                StreakChip(streak = streak)
+                StreakChip(streak = streak, onClick = onNavigateToInsights)
             }
 
             // Elegant Greeting
@@ -414,9 +414,10 @@ private fun SaveButton(enabled: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun StreakChip(streak: Int) {
+private fun StreakChip(streak: Int, onClick: () -> Unit) {
     Row(
         modifier = Modifier
+            .clickable { onClick() }
             .background(Surface, RoundedCornerShape(20.dp))
             .border(1.dp, SurfaceVariant, RoundedCornerShape(20.dp))
             .padding(horizontal = 14.dp, vertical = 8.dp),

@@ -20,4 +20,7 @@ interface JournalDao {
 
     @Query("SELECT timestamp FROM journal_entries ORDER BY timestamp DESC")
     suspend fun getAllTimestamps(): List<Long>
+
+    @Query("DELETE FROM journal_entries")
+    suspend fun deleteAllEntries()
 }

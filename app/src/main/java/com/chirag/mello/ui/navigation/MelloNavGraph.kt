@@ -3,6 +3,7 @@ package com.chirag.mello.ui.navigation
 import android.content.Context
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Person
@@ -17,6 +18,7 @@ import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
 import com.chirag.mello.ui.screens.HomeScreen
+import com.chirag.mello.ui.screens.InsightsScreen
 import com.chirag.mello.ui.screens.MelloBackground
 import com.chirag.mello.ui.screens.OnboardingScreen
 import com.chirag.mello.ui.screens.ProfileScreen
@@ -28,6 +30,7 @@ object Routes {
     const val ONBOARDING = "onboarding"
     const val HOME = "home"
     const val TIMELINE = "timeline"
+    const val INSIGHTS = "insights"
     const val PROFILE = "profile"
 }
 
@@ -90,6 +93,25 @@ fun MelloNavGraph() {
                             )
                         )
                         NavigationBarItem(
+                            icon = { Icon(Icons.Filled.BarChart, contentDescription = "Insights") },
+                            label = { Text("Insights") },
+                            selected = currentDestination?.hierarchy?.any { it.route == Routes.INSIGHTS } == true,
+                            onClick = {
+                                navController.navigate(Routes.INSIGHTS) {
+                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Background,
+                                selectedTextColor = Lavender,
+                                indicatorColor = Lavender,
+                                unselectedIconColor = TextSecondary,
+                                unselectedTextColor = TextSecondary
+                            )
+                        )
+                        NavigationBarItem(
                             icon = { Icon(Icons.Filled.Person, contentDescription = "Profile") },
                             label = { Text("Profile") },
                             selected = currentDestination?.hierarchy?.any { it.route == Routes.PROFILE } == true,
@@ -129,8 +151,15 @@ fun MelloNavGraph() {
                 composable(Routes.HOME) {
                     HomeScreen(
                         viewModel = viewModel,
-                        onNavigateToTimeline = { 
+                        onNavigateToTimeline = {
                             navController.navigate(Routes.TIMELINE) {
+                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        onNavigateToInsights = {
+                            navController.navigate(Routes.INSIGHTS) {
                                 popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                                 launchSingleTop = true
                                 restoreState = true
@@ -144,8 +173,11 @@ fun MelloNavGraph() {
                         onBack = { navController.popBackStack() }
                     )
                 }
+                composable(Routes.INSIGHTS) {
+                    InsightsScreen(viewModel = viewModel)
+                }
                 composable(Routes.PROFILE) {
-                    ProfileScreen()
+                    ProfileScreen(viewModel = viewModel)
                 }
             }
         }
