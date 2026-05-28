@@ -53,6 +53,10 @@ fun HomeScreen(viewModel: JournalViewModel, onNavigateToTimeline: () -> Unit, on
     val streak by viewModel.streak.collectAsState()
 
     val context = LocalContext.current
+    val userName = remember {
+        context.getSharedPreferences("mello_prefs", android.content.Context.MODE_PRIVATE)
+            .getString("user_name", "") ?: ""
+    }
     var hasAudioPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
@@ -117,7 +121,7 @@ fun HomeScreen(viewModel: JournalViewModel, onNavigateToTimeline: () -> Unit, on
             // Elegant Greeting
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "Welcome back,",
+                    text = if (userName.isNotBlank()) "Welcome back, $userName!" else "Welcome back,",
                     style = MaterialTheme.typography.bodyLarge,
                     color = TextSecondary
                 )
